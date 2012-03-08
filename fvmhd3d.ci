@@ -1,0 +1,188 @@
+mainmodule fvmhd3d
+{
+//  extern module completion;
+
+  namespace fvmhd3d
+  {
+    message MeshFluidGrad_msg
+    {
+      int         id_list[];
+      MeshPoint mesh_pnts[];
+      Fluid_rec Wrec_list[];
+      pair<Fluid_flt, Fluid_flt> Wrec_minmax[];
+    };
+    
+    message MeshFluidGradComplete_msg
+    {
+      Particle  ptcl_list[];
+      MeshPoint mesh_pnts[];
+      Fluid        U_list[];
+      FluidD      dU_list[];
+      Fluid_rec Wrec_list[];
+      pair<Fluid_flt, Fluid_flt> Wrec_minmax[];
+    };
+
+    readonly CProxy_Main                    mainProxy;
+    readonly CProxy_System                systemProxy;
+    readonly CProxy_globalDomains  globalDomainsProxy;
+    readonly int numElements;
+
+    readonly char     problem_string[256];
+    readonly char     problem_path  [256];
+    readonly boundary global_domain;
+    readonly vec3     global_domain_size;
+
+    readonly double   dtWall_doLB;
+    readonly double   dtWall_doCheckPoint;
+
+/*     readonly CProxy_CkCacheManager cachePtcl; */
+/*    readonly CProxy_CkCacheManager cacheFluid; */
+
+    mainchare [migratable] Main
+    {
+      entry Main(CkArgMsg *msg);
+
+      entry [threaded] void startSimulation();
+      entry [threaded] void doIterations();
+
+      entry void restart();
+
+      entry void domainDecomposition  (CkCallback &);
+      entry void domainDecompositionII(const CkVec<vec3>&);
+    };
+
+    nodegroup [migratable] globalDomains
+    {
+      entry globalDomains();
+      entry void setDomains(const CkVec<boundary>&, CkCallback&);
+    };
+
+
+    array [1D] System
+    {
+      entry System();
+
+      entry void generateGeometry(const int param, CkCallback&);
+      entry void generateGeometryII();
+      entry void generateGeometryIII();
+      entry void generateGeometryIV();
+      entry void generateIC         (const int param, CkCallback&);
+      entry void generateIC_II();
+      entry void generateIC_III();
+      entry void generateIC_IV();
+      entry void generateIC_complete(CkReductionMsg*);
+
+      entry void computeEnergy(CkCallback&);
+      entry void get_info(CkCallback&);
+
+      entry void sample_particles (const int);
+
+      entry void moveParticles     (CkCallback&);
+      entry void moveParticles_recv(MeshFluidGradComplete_msg*);
+      entry void moveParticles_complete();
+      entry void moveParticles_reduction(CkReductionMsg*);
+
+
+      entry void GetActiveList(CkCallback&);
+      entry void GetActiveListII(CkReductionMsg*);
+  
+      entry void BuildLocalMesh(CkCallback&);
+      entry void BuildLocalMeshII();
+      entry void BuildLocalMeshIII();
+  
+      entry void ComputeFluidUpdate(CkCallback&);
+      entry void ComputeFluidUpdateII();
+      entry void ComputeFluidUpdateIII();
+      entry void ComputeFluidUpdateIV();
+      entry void ComputeFluidUpdateV();
+  
+      entry void CompleteIteration(CkCallback&);
+      
+      entry void RefineDerefine(CkCallback&);
+      
+      entry void ImportPtclAct();
+      entry void ImportPtclAct_request(const CkVec< pair<int,int> >&, const int);
+      entry void ImportPtclAct_recv(const CkVec< pair<int, Particle> >&);
+      
+
+      entry void localMesh_import    (const int, CkCallback&);
+      entry void localMesh_importIII ();
+      entry void localMesh_import_reduction(CkReductionMsg*);
+			entry void localMesh_import_add2process(const CkVec<int>&, const pair<int, int>);
+			entry void localMesh_import_recvTicket();
+      entry void localMesh_insertPtcl(const CkVec<Particle>&, const int);
+      entry void localMesh_build();
+      entry void localMesh_compute_total_volume(CkCallback&);
+
+      entry void computeFluidUpdate_main(CkCallback&);
+      entry void slopeLimiter(CkCallback&);
+      entry void slopeLimiter_recvLimiter(const CkVec< pair<int, Fluid_flt> >&, const int);
+      entry void slopeLimiter_recvTicket();
+      entry void slopeLimiter_exchange();
+      entry void slopeLimiter_requestLimiter(const CkVec< pair<int, int> >&, const int);
+      entry void slopeLimiter_recvNewLimiter(const CkVec< pair<int, Fluid_flt> >&);
+
+      entry void computeFluidUpdate         ();
+      entry void computeFluidUpdateI        ();
+      entry void computeFluidUpdateII       ();
+      entry void computeFluidUpdate_complete();
+
+      entry void computeFluidUpdate_sendIncUpdate();
+      entry void computeFluidUpdate_recvIncUpdate(const CkVec< pair<int, FluidD> >&, const int);
+      entry void computeFluidUpdate_recvIncUpdateTicket();
+      
+      entry void exchangeNewDt();
+      entry void exchangeNewDt_recv(const CkVec< pair<int, real> >&, const int);
+      entry void exchangeNewDt_recvTicket();
+      
+      entry void exchangeNewDtAct();
+      entry void exchangeNewDtAct_recv(const CkVec< pair<int, real> >&, const int);
+      entry void exchangeNewDtAct_recvTicket();
+
+
+      entry void get_active_list  (CkCallback&);
+      entry void get_active_listII(CkReductionMsg*);
+
+      entry void Iterate(CkCallback&);
+      entry void IterateII();
+      entry void IterateIII();
+      entry void IterateIV();
+      entry void IterateV();
+      entry void IterateVI();
+      entry void IterateVII();
+      entry void IterateVIII();
+      entry void IterateIX();
+      entry void IterateX();
+      entry void Iterate_complete();
+      
+      entry void ImportFluidData();
+      entry void ImportFluidData_request(const CkVec< pair<int,int> >&, const int);
+      entry void ImportFluidData_recv(MeshFluidGrad_msg*);
+
+      entry void ImportFluidPrimitives();
+      entry void ImportFluidPrimitives_request(const CkVec< pair<int,int> >&, const int);
+      entry void ImportFluidPrimitives_recv   (const CkVec< pair<int, pair<Fluid, MeshPoint> > >&);
+      
+      entry void ImportNewDt();
+      entry void ImportNewDt_request(const CkVec< pair<int,int > >&, const int);
+      entry void ImportNewDt_recv   (const CkVec< pair<int,real> >&);
+      
+      entry void dump_binary(const CkVec<char>&, const int, CkCallback&);
+      entry void read_binary(const CkVec<char>&);
+
+
+      /************ globalMesh *******/
+  
+      entry void globalMesh_build(const bool, CkCallback&);
+      entry void globalMesh_recvPtcl_ticket();
+      entry void globalMesh_recvPtcl(const CkVec<Particle>&, const int);
+      entry void globalMesh_complete();
+
+      /*******************************/
+      
+      entry void loadBalancer(CkCallback&);
+
+    };
+  }
+
+};
