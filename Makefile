@@ -6,12 +6,12 @@ OPTS += -module GreedyCommLB
 CHARMC = $(CHARMDIR)/bin/charmc $(OPTS) 
 
 CCFLAGS = -DCGAL_NDEBUG -DCGAL_HAS_NO_THREADS -g -O4 -Wall -Wstrict-aliasing=0
-CCFLAGS += -m64 -msse3 -funroll-all-loops 
+CCFLAGS += -m64 -msse3 -funroll-all-loops  -D__$(MACOSX)__ -I$(HOME)/soft/CGAL/include
 # CCFLAGS += -frounding-math 
 CCFLAGS += -ftree-vectorize
 CCFLAGS += -ffast-math
 CCFLAGS += -I$(HOME)/usr/include -I/$(BOOST_INCLUDEDIR)
-LDFLAGS = -L$(HOME)/usr/lib -lCGAL
+LDFLAGS = -L$(HOME)/soft/CGAL/lib -L/opt/local/lib -lCGAL -lgmp
 
 
 TARGET = fvmhd3d

@@ -1,0 +1,18 @@
+#!/bin/bash
+## This line is a comment, the following lines are for Moab
+#MOAB -l procs=64
+#MOAB -l walltime=7:00:00:00
+#MSUB -A b1002
+#MOAB -N mri_disk_clear_trpl
+#MOAB -j oe 
+
+##### These are shell commands. Note that all MSUB commands come first.
+cd $PBS_O_WORKDIR
+ulimit -s unlimited
+
+$HOME/bin/charmnodes_trpl > /tmp/$PBS_JOBID/charm_nodelist
+export NP=$[PBS_NP+PBS_NP+PBS_NP]
+echo $NP
+
+(charmrun ./mri_disk 8192 ./data/mri_disk_tst 120 ++nodelist /tmp/$PBS_JOBID/charm_nodelist +p $NP ++batch 8 +balancer GreedyCommLB +show_cpu_topology 2>&1) >./data/mri_disk_tst/log02
+

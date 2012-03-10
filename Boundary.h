@@ -2,6 +2,10 @@
 #define __BOUNDARY_H__
 
 
+#ifndef HUGE
+#define HUGE 1e30
+#endif
+
 template<class fvec3> 
 struct Boundary 
 {
