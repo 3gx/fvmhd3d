@@ -9,7 +9,7 @@
 #include "mri_cyl.cpp"
 #endif
 
-#if 1
+#if 0
 #include "alfven.cpp"
 #endif
 
@@ -21,7 +21,7 @@
 #include "capture3d.cpp"
 #endif
 
-#if 0
+#if 1
 #include "blast.cpp"
 #endif
 
