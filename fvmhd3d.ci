@@ -158,10 +158,6 @@ mainmodule fvmhd3d
         {
           delete m;
           assert(nRecv_cntr == 0);
-        }
-
-        atomic
-        {
           localMesh_import_complete();
         }
 
