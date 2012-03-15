@@ -103,10 +103,11 @@ mainmodule fvmhd3d
       entry void ImportPtclAct();
       entry void ImportPtclAct_request(const CkVec< pair<int,int> >&, const int);
       entry void ImportPtclAct_recv(const CkVec< pair<int, Particle> >&);
-      
+     
+      /* this ChareScript routine, imports potential ngb from either local or remote chare's */
       entry void localMesh_import(const int ngbPass, CkCallback &cb)
       {
-        atomic 
+        atomic         /* preparation phase */
         {
           localMesh_completeCb = cb;
           assert(ngbPass > 0);
@@ -120,18 +121,22 @@ mainmodule fvmhd3d
             localMesh_sites2process.push_back(active_list[i]);
         }
 
+        /* this is the main loop */
         for (localMesh_ngbPass = 0; localMesh_ngbPass < ngbPass; localMesh_ngbPass++)
         {
-          atomic
+          atomic  /* process the particles, and export their ngb to remote/local chare */
           {
             const std::vector<int> sites2process = localMesh_sites2process;
             localMesh_sites2process.clear();
             localMesh_import_pass(sites2process, ngbPass);
           }
-        
+       
+          /* this waits for tickerts from the remote chares that import sites */
           for (icnt = 0; icnt < nSend_cntr; icnt++)
             when localMesh_import_new_ticket() atomic {}
-         
+        
+          /* once all tickets have been arrived, we throw a barrier 
+           * to avoid race conditions and make sure that all chares received their data */
           atomic
           {     
             nSend_cntr = 0;
@@ -145,15 +150,18 @@ mainmodule fvmhd3d
           }
         }
 
+        /* here, we wait for tickets from remote chares that imported particles sent by this chare */
         for (icnt = 0; icnt < nRecv_cntr; icnt++)
           when localMesh_insertPtcl_ticket() atomic {}
 
+        /* once, done throw a barrier to avoid race conditions */
         atomic
         {
           nRecv_cntr = 0;
           contribute(CkCallback(CkIndex_System::localMesh_import_loop_done(NULL), thisProxy));
         }
 
+        /* at this point all neccessary data is locally available, so we can complete import */
         when localMesh_import_loop_done(CkReductionMsg *m) atomic
         {
           delete m;
