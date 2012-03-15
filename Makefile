@@ -19,13 +19,14 @@ TARGET = fvmhd3d
 default: all
 all: $(TARGET)
 
-OBJECTS = fvmhd3d.o System.o \
+OBJECTS  = \
+					localMesh.o \
+					fvmhd3d.o System.o \
 					loadBalancer.o \
 					globalDomains.o \
 					moveParticles.o \
 					sort_local_data.o \
 					globalMesh.o \
-					localMesh.o \
 					localRefDeref.o \
 					computeFluidUpdate.o \
 					computeFlux.o \
@@ -68,7 +69,7 @@ clean_all:
 $(TARGET).o: $(OBJECS)
 $(OBJECTS): fvmhd3d.ci fvmhd3d.h MeshPoint.h Fluid.h Scheduler.h vector3.h Boundary.h bOctree.h
 bOctree.h: vector3.h Boundary.h memory_pool.h
-fvmhd3d.h: fvmhd3d.decl.h fvmhd3d.def.h
+fvmhd3d.h: fvmhd3d.decl.h fvmhd3d.def.h 
 System.o: distributenew.h
 Problem.o: Problem.cpp \
 	mri_disk.cpp \

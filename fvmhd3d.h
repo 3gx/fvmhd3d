@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <charm++.h>
+#include <map>
 #if 0
 #include "CkCache.h"
 #endif
@@ -399,7 +400,7 @@ namespace fvmhd3d
 
       std::vector<int> nSend_list;
       std::vector<int> nRecv_list;
-      int              nSend_cntr;
+      int              nSend_cntr, icnt, jcnt;
       int              nRecv_cntr;
 
       CkCallback MainCB;
@@ -427,6 +428,7 @@ namespace fvmhd3d
       void init();
 
     public:
+      System_SDAG_CODE;
       System();
       System(CkMigrateMessage*);
 
@@ -495,13 +497,12 @@ namespace fvmhd3d
       void *T_ptr;
       void *Tvtx_ptr;
       int   n_in_DTloc;
-      void localMesh_import    (const int, CkCallback&);
-      void localMesh_importII  (const std::vector<int>&);
-      void localMesh_importIII ();
-      void localMesh_import_reduction(CkReductionMsg*);
-      void localMesh_import_add2process(const CkVec<int>&, const pair<int, int>);
-      void localMesh_import_recvTicket();
-      void localMesh_insertPtcl(const CkVec<Particle>&, const int);
+
+      void localMesh_import_pass(const std::vector<int>, const int);
+      
+      void localMesh_import_new(const CkVec<int> &recvData, const pair<int, int> recvPair);
+      void localMesh_insertPtcl(const CkVec<Particle> &ptcl_in, const int recvIndex);
+
       void localMesh_import_complete  ();
       void localMesh_build();
       void localMesh_compute_total_volume(CkCallback&);

@@ -5,11 +5,13 @@ namespace fvmhd3d
 {
   System::System() 
   {
+    __sdag_init();
     usesAtSync = CmiTrue;
     init();
   }
   System::System(CkMigrateMessage *msg) 
   {
+    __sdag_init();
     init();
     delete msg;
   }

@@ -7,7 +7,6 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <CGAL/spatial_sort.h>
 
-
 namespace fvmhd3d
 {
 
@@ -24,26 +23,195 @@ namespace fvmhd3d
   typedef DT::Cell_circulator TCell_circulator;
   typedef DT::Facet_circulator TFacet_circulator;
   typedef CGAL::Spatial_sort_traits_adapter_3<K, TPoint*> Search_traits_3;
-  
-  void System::localMesh_import(const int ngbPass, CkCallback &cb)
-  {
-    localMesh_completeCb = cb;
-    assert(ngbPass > 0);
-		localMesh_ngbPass = ngbPass + 1;
-		localMesh_sites2process.clear();
-		localMesh_sites2process.push_back(active_list.size());
-		localMesh_sites2process.push_back(thisIndex);
-		for (int i = 0; i < (const int)active_list.size(); i++)
-      localMesh_sites2process.push_back(active_list[i]);
 
-#if 1
-    nSend_cntr = 1;
-    localMesh_import_recvTicket();
-#else
-    nSend_cntr = 0;
-    localMesh_importIII();
-#endif
+  void System::localMesh_import_pass(std::vector<int> sites2process, const int ngbPass)
+  {
+    const int n2process = sites2process.size();
+    assert(nSend_cntr == 0);
+
+    int isite = 0;
+    while (isite < n2process)
+    {
+      const int nsend     = sites2process[isite++];
+      const int sendIndex = sites2process[isite++];
+      assert(sendIndex >= 0);
+      assert(sendIndex <  numElements);
+
+      CkVec<Particle> return_list;
+      CkVec<  int   > site_in;
+      return_list.reserve(nsend);
+      site_in    .reserve(nsend);
+      assert(isite + nsend <= n2process);
+      for (int i = 0; i < nsend; i++)
+      {
+        const int iId = sites2process[isite++];
+        assert(iId >= 0);
+        assert(iId <  local_n);
+        if (ngb_list_hash[iId].use(sendIndex))
+        {
+          ngb_list_hash_used.push_back(iId);
+          site_in.push_back(iId);
+
+          Problem_predict_meshpoint_position(iId);
+          ptcl_list[iId] = mesh_pnts[iId].pos;
+          slopeLimiter_all[iId] = 1.0;
+
+          if (!(sendIndex == thisIndex && ptcl_list[iId].is_active()))
+            return_list.push_back(ptcl_list[iId]);
+        }
+      }
+
+      const int nrecv = site_in.size();
+
+      if (nrecv > 0)
+      {
+        if (sendIndex != thisIndex)
+        {
+          nRecv_cntr++;
+          systemProxy[sendIndex].localMesh_insertPtcl(return_list, thisIndex);
+        }
+        else
+          localMesh_insertPtcl(return_list, thisIndex);
+      }
+
+      if (nrecv > 0 && localMesh_ngbPass + 1 < ngbPass)
+      {
+        std::vector< pair<int, int> > export_list;
+        export_list.reserve(nrecv);
+
+        std::map< std::pair<int, int>, bool> remote_map;
+
+        for (int irecv = 0; irecv < nrecv; irecv++)
+        {
+          const int i = site_in[irecv];
+          assert(i >= 0);
+          assert(i < local_n);
+          const Neighbours< pair<int, int> > &ngb = ngb_list[i];
+          const int nj = ngb.size();
+          for (int j = 0; j < nj; j++)
+          {
+            const int jIndex = ngb[j].first;
+            const int jId    = ngb[j].second;
+            if (jIndex == thisIndex)
+            {
+              assert(jId >= 0);
+              assert(jId <  local_n);
+              if (!ngb_list_hash[jId].is_used(sendIndex))
+                export_list.push_back(ngb[j]);
+            }
+            else
+            {
+              const int size0 = remote_map.size();
+              remote_map[ngb[j].make_pair()] = true;
+              if ((int)remote_map.size() == size0+1)
+                export_list.push_back(ngb[j]);
+              else
+                assert((int)remote_map.size() == size0);
+            }
+          }
+        }
+
+        std::sort(export_list.begin(), export_list.end(), std_pair_first_sort());
+
+        const int nexport = export_list.size();
+        CkVec<int> sites2export;
+        sites2export.reserve(nexport);
+        export_list.push_back(std::make_pair(-1, -1));
+        for (int i = 0; i < nexport; i++)
+        {
+          const int iElement =   export_list[i].first;
+          assert(export_list[i].second >= 0);
+          sites2export.push_back(export_list[i].second);
+          assert(iElement >= 0);
+          assert(iElement < numElements);
+          if (iElement != export_list[i+1].first && sites2export.size() > 0)
+          {
+            if (thisIndex != iElement)
+            {
+              nSend_cntr++;
+              thisProxy[iElement].localMesh_import_new(sites2export, std::make_pair(sendIndex, thisIndex));
+            }
+            else
+              localMesh_import_new(sites2export, std::make_pair(sendIndex, thisIndex));
+            sites2export.clear();
+          }
+        }
+      }
+
+    }  /* while isite < n2process */
   }
+
+  void System::localMesh_import_new(const CkVec<int> &recvData, const pair<int, int> recvPair)
+  {
+    const int sendIndex = recvPair.first;
+    const int recvIndex = recvPair.second;
+
+
+    const int nsend = recvData.size();
+    localMesh_sites2process.push_back(nsend);
+    localMesh_sites2process.push_back(sendIndex);
+    for (int i = 0; i < nsend; i++)
+      localMesh_sites2process.push_back(recvData[i]);
+
+    if (recvIndex != thisIndex)
+      systemProxy[recvIndex].localMesh_import_new_ticket();
+  };
+
+  void System::localMesh_insertPtcl(const CkVec<Particle> &ptcl_in, const int recvIndex)
+  {
+    if (recvIndex != thisIndex)
+    {
+      const vec3 box_centre = domains->proc_domains[thisIndex].centre();
+      const vec3 box_hsize  = domains->proc_domains[thisIndex].hsize();
+      const vec3 c = global_domain.centre();
+      const vec3 s = global_domain_size;
+
+      vec3 ppos[8]; 
+      const int nrecv    = ptcl_in.size();
+      for (int i = 0; i < nrecv; i++)
+      {
+        int jmin = 0;
+        ppos[0] = ptcl_in[i].get_pos();
+        vec3 dr = (ppos[jmin] - box_centre).abseach() - box_hsize;
+        dr = (dr + dr.abseach())*0.5;
+        vec3 dr_min = dr;
+
+        const bool flagx = ppos[0].x < c.x;
+        const bool flagy = ppos[0].y < c.y;
+        const bool flagz = ppos[0].z < c.z;
+        for (int j = 1; j < 8; j++)
+        {
+          ppos[j] = ppos[0];
+          vec3 &p = ppos[j];
+          p.x = ((j&1) == 1) ? (flagx ? p.x + s.x : p.x - s.x) : p.x;
+          p.y = ((j&2) == 2) ? (flagy ? p.y + s.y : p.y - s.y) : p.y;
+          p.z = ((j&4) == 4) ? (flagz ? p.z + s.z : p.z - s.z) : p.z;
+          dr = (p - box_centre).abseach() - box_hsize;
+          dr = (dr + dr.abseach())*0.5;
+          if (dr.norm2() < dr_min.norm2())
+          {
+            jmin = j;
+            dr_min = dr;
+          }
+        }
+
+        ptcl_import_ptr->push_back(ptcl_in[i]);
+        ptcl_import_ptr->back() = ppos[jmin];
+      }
+      
+      systemProxy[recvIndex].localMesh_insertPtcl_ticket();
+    }
+    else
+    {
+      const int nrecv = ptcl_in.size();
+      for (int i = 0; i < nrecv; i++)
+      {
+        assert(ptcl_in[i].chare() == thisIndex);
+        ptcl_act.push_back(&ptcl_list[ptcl_in[i].id()]);
+      }
+    }
+
+  }; 
 
   void System::localMesh_import_complete()
   {
@@ -153,252 +321,6 @@ namespace fvmhd3d
 #endif
   }
 
-  void System::localMesh_importII(const std::vector<int> &sites2process)
-  {
-    assert(nSend_cntr == 0);
-    const int n2process = sites2process.size();
-
-    int isite = 0;
-    while (isite < n2process)
-    {
-      const int nsend     = sites2process[isite++];
-      const int sendIndex = sites2process[isite++];
-      assert(sendIndex >= 0);
-      assert(sendIndex <  numElements);
-
-      CkVec<Particle> return_list;
-      CkVec<  int   > site_in;
-      return_list.reserve(nsend);
-      site_in    .reserve(nsend);
-      assert(isite + nsend <= n2process);
-      for (int i = 0; i < nsend; i++)
-      {
-        const int iId = sites2process[isite++];
-        assert(iId >= 0);
-        assert(iId <  local_n);
-        if (ngb_list_hash[iId].use(sendIndex))
-        {
-          ngb_list_hash_used.push_back(iId);
-          site_in.push_back(iId);
-
-#if 1
-          Problem_predict_meshpoint_position(iId);
-          ptcl_list[iId] = mesh_pnts[iId].pos;
-          slopeLimiter_all[iId] = 1.0;
-#endif
-
-          if (!(sendIndex == thisIndex && ptcl_list[iId].is_active()))
-            return_list.push_back(ptcl_list[iId]);
-        }
-      }
-
-      const int nrecv = site_in.size();
-
-      if (nrecv > 0)
-      { 
-        if (sendIndex != thisIndex)   
-        {
-          nSend_cntr++;
-          systemProxy[sendIndex].localMesh_insertPtcl(return_list, thisIndex);
-        }
-        else 
-        {
-          localMesh_insertPtcl(return_list, thisIndex);
-        }
-      }
-
-      if (nrecv > 0 && localMesh_ngbPass > 0)
-      {
-        std::vector< pair<int, int> > export_list;
-        export_list.reserve(nrecv);
-
-        std::map< std::pair<int, int>, bool> remote_map;
-
-        for (int irecv = 0; irecv < nrecv; irecv++)
-        {
-          const int i = site_in[irecv];
-          assert(i >= 0);
-          assert(i < local_n);
-          const Neighbours< pair<int, int> > &ngb = ngb_list[i];
-          const int nj = ngb.size();
-          for (int j = 0; j < nj; j++)
-          {
-            const int jIndex = ngb[j].first;
-            const int jId    = ngb[j].second;
-            if (jIndex == thisIndex)
-            {
-              if (!(jId >= 0))
-              {
-                fprintf(stderr, " ngbPass= %d thisIndex= %d j= %d %d  jId= %d irecv= %d  nrecv=%d %d %d\n",
-                    localMesh_ngbPass, thisIndex, j, nj, jId, irecv, nrecv, (int)sites2process.size(),local_n);
-              }
-              assert(jId >= 0);
-              assert(jId <  local_n);
-              if (!ngb_list_hash[jId].is_used(sendIndex))
-                export_list.push_back(ngb[j]);
-            }
-            else
-            {
-              const int size0 = remote_map.size();
-              remote_map[ngb[j].make_pair()] = true;
-              if ((int)remote_map.size() == size0+1)
-                export_list.push_back(ngb[j]);
-              else
-                assert((int)remote_map.size() == size0);
-            }
-          }
-        }
-
-        std::sort(export_list.begin(), export_list.end(), std_pair_first_sort());
-
-        const int nexport = export_list.size();
-        CkVec<int> sites2export;
-        sites2export.reserve(nexport);
-        export_list.push_back(std::make_pair(-1, -1));
-        for (int i = 0; i < nexport; i++)
-        {
-          const int iElement =   export_list[i].first;
-          assert(export_list[i].second >= 0);
-          sites2export.push_back(export_list[i].second);
-          assert(iElement >= 0);
-          assert(iElement < numElements);
-          if (iElement != export_list[i+1].first && sites2export.size() > 0)
-          {
-            if (thisIndex != iElement)   
-            {
-              nSend_cntr++;
-              systemProxy[iElement].localMesh_import_add2process(sites2export, std::make_pair(sendIndex, thisIndex));
-            }
-            else                      
-            {
-              localMesh_import_add2process(sites2export, std::make_pair(sendIndex, thisIndex));
-            }
-            sites2export.clear();
-          }
-        }
-      }
-
-    }
-
-#if 1
-
-#if 0
-    if (nSend_cntr == 0)
-      contribute(CkCallback(CkIndex_System::localMesh_importIII(), thisProxy));
-#else
-    nSend_cntr++;
-    localMesh_import_recvTicket();
-#endif
-#else
-    nSend_cntr++;
-    contribute(CkCallback(CkIndex_System::localMesh_import_recvTicket(), thisProxy));
-#endif
-
-  } /* end System::localMesh_importII(..) */
-
-  void System::localMesh_import_reduction(CkReductionMsg *msg)
-  {
-    assert(false);
-  }
-
-  void System::localMesh_import_recvTicket()
-  {
-    nSend_cntr--;
-    assert(nSend_cntr >= 0);
-    if (nSend_cntr == 0)
-      contribute(CkCallback(CkIndex_System::localMesh_importIII(), thisProxy));
-  }
-
-  void System::localMesh_importIII()
-  {
-    assert(nSend_cntr == 0);
-    if (localMesh_ngbPass > 0)
-    {
-      localMesh_ngbPass--;
-      const std::vector<int> sites2process = localMesh_sites2process;
-      localMesh_sites2process.clear();
-      localMesh_importII(sites2process);
-    }
-    else
-    {
-      localMesh_import_complete();
-    }
-  } /* end System::localMesh_importIII() */
-
-  void System::localMesh_import_add2process(const CkVec<int> &recvData, const pair<int, int> recvPair)
-  {
-
-    const int sendIndex = recvPair.first;
-    const int recvIndex = recvPair.second;
-
-
-    const int nsend = recvData.size();
-    localMesh_sites2process.push_back(nsend);
-    localMesh_sites2process.push_back(sendIndex);
-    for (int i = 0; i < nsend; i++)
-      localMesh_sites2process.push_back(recvData[i]);
-
-    if (recvIndex != thisIndex)
-      systemProxy[recvIndex].localMesh_import_recvTicket();
-  }  /* end System::localMesh_import_add2process */
-
-  void System::localMesh_insertPtcl(const CkVec<Particle> &ptcl_in, const int recvIndex)
-  {
-    if (recvIndex != thisIndex)
-    {
-
-      const vec3 box_centre = domains->proc_domains[thisIndex].centre();
-      const vec3 box_hsize  = domains->proc_domains[thisIndex].hsize();
-      const vec3 c = global_domain.centre();
-      const vec3 s = global_domain_size;
-
-      vec3 ppos[8]; 
-      const int nrecv    = ptcl_in.size();
-      for (int i = 0; i < nrecv; i++)
-      {
-        int jmin = 0;
-        ppos[0] = ptcl_in[i].get_pos();
-        vec3 dr = (ppos[jmin] - box_centre).abseach() - box_hsize;
-        dr = (dr + dr.abseach())*0.5;
-        vec3 dr_min = dr;
-
-        const bool flagx = ppos[0].x < c.x;
-        const bool flagy = ppos[0].y < c.y;
-        const bool flagz = ppos[0].z < c.z;
-        for (int j = 1; j < 8; j++)
-        {
-          ppos[j] = ppos[0];
-          vec3 &p = ppos[j];
-          p.x = ((j&1) == 1) ? (flagx ? p.x + s.x : p.x - s.x) : p.x;
-          p.y = ((j&2) == 2) ? (flagy ? p.y + s.y : p.y - s.y) : p.y;
-          p.z = ((j&4) == 4) ? (flagz ? p.z + s.z : p.z - s.z) : p.z;
-          dr = (p - box_centre).abseach() - box_hsize;
-          dr = (dr + dr.abseach())*0.5;
-          if (dr.norm2() < dr_min.norm2())
-          {
-            jmin = j;
-            dr_min = dr;
-          }
-        }
-
-        ptcl_import_ptr->push_back(ptcl_in[i]);
-        ptcl_import_ptr->back() = ppos[jmin];
-      }
-
-      systemProxy[recvIndex].localMesh_import_recvTicket();
-    }
-    else
-    {
-      const int nrecv = ptcl_in.size();
-      for (int i = 0; i < nrecv; i++)
-      {
-        assert(ptcl_in[i].chare() == thisIndex);
-        ptcl_act.push_back(&ptcl_list[ptcl_in[i].id()]);
-      }
-    }
-
-  } /* end System::localMesh_insertPtcl(..) */
-
   void System::localMesh_destroy()
   {
     delete (DT*)T_ptr;
@@ -416,7 +338,7 @@ namespace fvmhd3d
     DT  *To = new DT();
     T_ptr = (void*)To;
     DT &T = *(DT*)T_ptr;
-    
+
     assert(Tvtx_ptr == NULL);
     std::vector<TVertex_handle> *Tvtx_o = new std::vector<TVertex_handle>(ptcl_act.size());
     Tvtx_ptr = (void*)Tvtx_o;

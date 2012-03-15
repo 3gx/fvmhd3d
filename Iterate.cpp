@@ -348,7 +348,11 @@ namespace fvmhd3d
     ptcl_import_ptr = new std::vector<Particle>();
 
     const int ngbPass = 2;
+#if 0
     systemProxy[thisIndex].localMesh_import(ngbPass, CkCallback(CkIndex_System::IterateIII(), systemProxy[thisIndex]));
+#else
+    localMesh_import(ngbPass, CkCallback(CkIndex_System::IterateIII(), systemProxy[thisIndex]));
+#endif
   }
 
   void System::IterateIII()

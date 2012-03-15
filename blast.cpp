@@ -47,7 +47,7 @@ namespace fvmhd3d
 #endif
 
 
-    int global_n = 1000000.0;
+    int global_n = 100000.0;
     std::vector<int> n_per_element(numElements, 0);
 
     for (int i = 0; i < global_n; i++)

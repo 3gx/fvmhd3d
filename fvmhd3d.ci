@@ -104,13 +104,79 @@ mainmodule fvmhd3d
       entry void ImportPtclAct_request(const CkVec< pair<int,int> >&, const int);
       entry void ImportPtclAct_recv(const CkVec< pair<int, Particle> >&);
       
+      entry void localMesh_import(const int ngbPass, CkCallback &cb)
+      {
+        atomic 
+        {
+          localMesh_completeCb = cb;
+          assert(ngbPass > 0);
+          nSend_cntr = 0;
+          nRecv_cntr = 0;
+          
+          localMesh_sites2process.clear();
+          localMesh_sites2process.push_back(active_list.size());
+          localMesh_sites2process.push_back(thisIndex);
+          for (int i = 0; i < (const int)active_list.size(); i++)
+            localMesh_sites2process.push_back(active_list[i]);
+        }
 
-      entry void localMesh_import    (const int, CkCallback&);
-      entry void localMesh_importIII ();
-      entry void localMesh_import_reduction(CkReductionMsg*);
-			entry void localMesh_import_add2process(const CkVec<int>&, const pair<int, int>);
-			entry void localMesh_import_recvTicket();
-      entry void localMesh_insertPtcl(const CkVec<Particle>&, const int);
+        for (localMesh_ngbPass = 0; localMesh_ngbPass < ngbPass; localMesh_ngbPass++)
+        {
+          atomic
+          {
+            const std::vector<int> sites2process = localMesh_sites2process;
+            localMesh_sites2process.clear();
+            localMesh_import_pass(sites2process, ngbPass);
+          }
+        
+          for (icnt = 0; icnt < nSend_cntr; icnt++)
+            when localMesh_import_new_ticket() atomic {}
+         
+          atomic
+          {     
+            nSend_cntr = 0;
+            contribute(CkCallback(CkIndex_System::localMesh_import_pass_done(NULL), thisProxy));
+          }
+
+          when localMesh_import_pass_done(CkReductionMsg *m) atomic
+          {
+            delete m;
+            assert(nSend_cntr == 0);
+          }
+        }
+
+        for (icnt = 0; icnt < nRecv_cntr; icnt++)
+          when localMesh_insertPtcl_ticket() atomic {}
+
+        atomic
+        {
+          nRecv_cntr = 0;
+          contribute(CkCallback(CkIndex_System::localMesh_import_loop_done(NULL), thisProxy));
+        }
+
+        when localMesh_import_loop_done(CkReductionMsg *m) atomic
+        {
+          delete m;
+          assert(nRecv_cntr == 0);
+        }
+
+        atomic
+        {
+          localMesh_import_complete();
+        }
+
+      };
+
+      entry void localMesh_import_pass_done(CkReductionMsg*);
+      entry void localMesh_import_loop_done(CkReductionMsg*);
+    
+      entry void localMesh_import_new(const CkVec<int> &recvData, const pair<int, int> recvPair);
+      entry void localMesh_import_new_ticket();
+     
+      entry void localMesh_insertPtcl(const CkVec<Particle> &ptcl_in, const int recvIndex);
+      entry void localMesh_insertPtcl_ticket(); 
+
+
       entry void localMesh_build();
       entry void localMesh_compute_total_volume(CkCallback&);
 
@@ -130,11 +196,11 @@ mainmodule fvmhd3d
       entry void computeFluidUpdate_sendIncUpdate();
       entry void computeFluidUpdate_recvIncUpdate(const CkVec< pair<int, FluidD> >&, const int);
       entry void computeFluidUpdate_recvIncUpdateTicket();
-      
+
       entry void exchangeNewDt();
       entry void exchangeNewDt_recv(const CkVec< pair<int, real> >&, const int);
       entry void exchangeNewDt_recvTicket();
-      
+
       entry void exchangeNewDtAct();
       entry void exchangeNewDtAct_recv(const CkVec< pair<int, real> >&, const int);
       entry void exchangeNewDtAct_recvTicket();
@@ -154,7 +220,7 @@ mainmodule fvmhd3d
       entry void IterateIX();
       entry void IterateX();
       entry void Iterate_complete();
-      
+
       entry void ImportFluidData();
       entry void ImportFluidData_request(const CkVec< pair<int,int> >&, const int);
       entry void ImportFluidData_recv(MeshFluidGrad_msg*);
@@ -162,24 +228,24 @@ mainmodule fvmhd3d
       entry void ImportFluidPrimitives();
       entry void ImportFluidPrimitives_request(const CkVec< pair<int,int> >&, const int);
       entry void ImportFluidPrimitives_recv   (const CkVec< pair<int, pair<Fluid, MeshPoint> > >&);
-      
+
       entry void ImportNewDt();
       entry void ImportNewDt_request(const CkVec< pair<int,int > >&, const int);
       entry void ImportNewDt_recv   (const CkVec< pair<int,real> >&);
-      
+
       entry void dump_binary(const CkVec<char>&, const int, CkCallback&);
       entry void read_binary(const CkVec<char>&);
 
 
       /************ globalMesh *******/
-  
+
       entry void globalMesh_build(const bool, CkCallback&);
       entry void globalMesh_recvPtcl_ticket();
       entry void globalMesh_recvPtcl(const CkVec<Particle>&, const int);
       entry void globalMesh_complete();
 
       /*******************************/
-      
+
       entry void loadBalancer(CkCallback&);
 
     };

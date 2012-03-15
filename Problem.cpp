@@ -21,12 +21,12 @@
 #include "capture3d.cpp"
 #endif
 
-#if 1
+#if 0
 #include "blast.cpp"
 #endif
 
 
-#if 0
+#if 1
 namespace fvmhd3d
 {
 
@@ -248,6 +248,23 @@ namespace fvmhd3d
     return W[Fluid::ENTR] * std::pow(W[Fluid::DENS], gamma_gas)/(gamma_gas - 1.0);
   }
 
+  real System::Problem_enforce_limiter(const int i)
+	{
+    return 1.0;
+	}
+  void System::Problem_set_boundary(const int i)
+  {
+  }
+
+  bool System::Problem_meshpoint_refine(const int i)
+  {
+    return false;
+  }
+
+  bool System::Problem_meshpoint_derefine(const int i)
+  {
+    return false;
+  }
 
 
 

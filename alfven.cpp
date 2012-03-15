@@ -6,8 +6,8 @@ namespace fvmhd3d
 {
 
 #if 1
-#define NX 16
-#define NY 8
+#define NX 32
+#define NY 16
 #define NZ 16
 #endif
 
