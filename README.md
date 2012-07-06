@@ -1,4 +1,5 @@
-This is a public version of fvmhd3d--the finite volume moving mesh MHD code--
+This is a public version of fvmhd3d--the finite volume moving mesh MHD code
+
 (c) Evghenii Gaburov, 2011
 
 Requirement:
